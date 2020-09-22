@@ -17,23 +17,24 @@ test_classif = DF_classif[train_ind,]
 library(randomForest)
 model_classif <- randomForest(PC_FIXE ~ .,data = train_classif, ntree=200)
 y_pred_classif <- predict(model_classif, test_classif[,-ncol(test_classif)],type = 'class')
-#Matrice de confusion
+#Confusion matrix
 mc_classif <- table(test_classif$PC_FIXE,y_pred_classif)
-#AC
+#Accuracy Rate
 print(sum(diag(mc_classif))/sum(mc_classif))
 #50 arbres: 0.9946921
 #100 arbres: 0.99787
 #200 arbres: 0.9989384
 #300 arbres: 0.9978769
 
+#################################### Linear regression model
 #Build regression
 model_regress <- lm(PC_MT_CAPITAL~K_MT_DMDR + K_MT_OFFR + K_MT_RC + 
                      REV_SALR_MT_EPSE + R_MT_DMDR + NUM_ECH_MT_OFFR + NUM_ECH_MT_RC + 
                      R_MT_OFFR + RT_MT_K_TOT_OFFR + NUM_ECH_NBV_DMDR + NUM_ECH_MT_DMDR,train_regres)
 y_pred_regress <- predict(model_regress,test_regres)
-summary(model_regress) 0.6619
+summary(model_regress) #0.6619
 
-#prediction accuracy
+#Prediction accuracy
 actuals_preds_step <- data.frame(cbind(actuals=test_regres$PC_MT_CAPITAL, predicteds=y_pred_regress))  # make actuals_predicteds dataframe.
 cor(actuals_preds_step)^2 #Rsq 0.6618669
 mean(actuals_preds_step$actuals) #33653.89
@@ -58,7 +59,7 @@ median(actuals_preds_step$error) #3952.877
 sd(actuals_preds_step$error) #35597.2
 
 
-#################################### Modele de regression régularisé: Elastic Net
+#################################### Regularized regression model: Elastic Net
 library(caret)
 library(glmnet) # for ridge regression
 library(dplyr)
@@ -96,9 +97,9 @@ min(error_enet) #24.85192
 mean(error_enet)#26142
 median(error_enet) #23417.88
 sd(error_enet) #32018.75
-##################################################################################################
 
-#Quantile regression
+
+#################################### #Quantile regression
 library(quantreg)
 rqmodel <- rq(formula = PC_MT_CAPITAL ~ K_MT_DMDR + K_MT_OFFR + K_MT_RC + 
                 REV_SALR_MT_EPSE + R_MT_DMDR + NUM_ECH_MT_OFFR + NUM_ECH_MT_RC + 
@@ -119,7 +120,7 @@ median(actuals_preds_step$error) #3432.981
 sd(actuals_preds_step$error) #41142.31
 
 ################################################################################################
-#Effet NOM_TGI
+#NOM_TGI Effect
 DF_classif_TGI <-cbind(DF_paper_TGI$NOM_TGI,DF_classif)
 names(DF_classif_TGI)[names(DF_classif_TGI)=='DF_paper_TGI$NOM_TGI'] <- 'NOM_TGI'
 
@@ -130,14 +131,14 @@ train_ind = sample(seq_len(nrow(DF_classif_TGI)), size = sample_size)
 train_classif_TGI = DF_classif_TGI[train_ind,]
 test_classif_TGI = DF_classif_TGI[train_ind,]
 
-#Un arbre de decision sans NOM_TGI
+#Decision Tree without NOM_TGI
 library(rpart)
 modelAD <- rpart(PC_FIXE ~ .,data = train_classif,method = 'class',control = rpart.control(cp = 0, minsplit = 10,maxdepth=4))
 y_probAD <- predict(modelAD, test_classif[,-ncol(test_classif)],type = 'prob')
 y_predAD <- ifelse(y_probAD[,2]>0.5,1,0)
-#Matrice de confusion
+#Confusion Matrix
 mcAD <- table(test_classif$PC_FIXE,y_predAD)
-#AC
+#Accuracy Rate
 print(sum(diag(mcAD))/sum(mcAD)) #0.8046709
 #F1-score
 library(MLmetrics)
@@ -152,13 +153,13 @@ rpart.plot(modelAD, type = 3, box.palette = c("red", "green"), fallen.leaves = T
 
 
 
-#Un arbre de decision avec NOM_TGI
+#Decision Tree with NOM_TGI
 modelAD_TGI <- rpart(PC_FIXE ~ .,data = train_classif_TGI,method = 'class')
 y_probAD_TGI <- predict(modelAD_TGI, test_classif_TGI[,-ncol(test_classif_TGI)],type = 'prob')
 y_predAD_TGI <- ifelse(y_probAD_TGI[,2]>0.5,1,0)
-#Matrice de confusion
+#Confusion Matrix
 mcAD_TGI <- table(test_classif_TGI$PC_FIXE,y_predAD_TGI)
-#AC
+#Accuracy Rate
 print(sum(diag(mcAD_TGI))/sum(mcAD_TGI)) #0.8789809
 #F1-score
 print(F1_Score(test_classif_TGI$PC_FIXE,y_predAD_TGI)) #0.7807692
@@ -169,9 +170,9 @@ roc.curve(test_classif_TGI$PC_FIXE,y_predAD_TGI) #0.840
 library(caret)
 random_forest <- train(PC_FIXE ~ .,data = train_classif, method = "rf")
 y_random_forest <- predict(random_forest, test_classif[,-ncol(test_classif)])
-#Matrice de confusion
+#Confusion Matrix
 mcAD <- table(test_classif$PC_FIXE,y_random_forest)
-#AC
+#Accuracy Rate
 print(sum(diag(mcAD))/sum(mcAD)) #0.9989384
 #F1-score
 library(MLmetrics)
@@ -180,12 +181,12 @@ print(F1_Score(test_classif$PC_FIXE,y_random_forest)) #0.9981584
 require(ROSE)
 roc.curve(test_classif$PC_FIXE,y_random_forest) #0.998
 
-#Avec TGI
+#With TGI
 random_forest_TGI <- train(PC_FIXE ~ .,data = train_classif_TGI, method = "rf")
 y_random_forest_TGI <- predict(random_forest, test_classif_TGI[,-ncol(test_classif_TGI)])
-#Matrice de confusion
+#Confusion Matrix
 mcAD <- table(test_classif_TGI$PC_FIXE,y_random_forest_TGI)
-#AC
+#Accuracy Rate
 print(sum(diag(mcAD))/sum(mcAD)) #0.9989384
 #F1-score
 library(MLmetrics)
@@ -224,7 +225,7 @@ acp_zoom <- test_regres_acp[test_regres_acp$y_pred<0.0000000001,]
 ggplot(acp_zoom, aes(x = comp1, y = y_pred)) + geom_point() + geom_abline(color = "blue")
 test_regres_acp <- test_regres_acp[,-ncol(test_regres_acp)]
 
-#########ACP et graphe
+#########ACP and graphe
 test_regres_light <- test_regres[test_regres$PC_MT_CAPITAL<600000,]
 test_regres_light <- test_regres
 test_regres_acp <- data.frame(cbind(princomp(test_regres_light[,-ncol(test_regres_light)],cor=T,scores=T)$scores[,1:2],test_regres_light$PC_MT_CAPITAL))
@@ -234,6 +235,6 @@ plot(test_regres_acp[,1],test_regres_acp[,2],xlab="comp.1-20.0%",ylab="comp.2-16
 abline(lm(formula = actuals_alimonies~comp1,data=test_regres_acp),col='red')
 legend(0,500000,c('Predicted alimonies','Actual alimonies'),lty=c(1,NA),pch=c(NA,'o'),,col=c("red","black"),bg='white')
 
-#obtenir les variances associées aux axes c.-à-d. les valeurs propres
+#Get the variances associated with the axes i.e. eigenvalues
 val.propres <- princomp(test_regres_light[,-ncol(test_regres_light)],cor=T,scores=T)$sdev^2
 print(val.propres/sum(val.propres))
