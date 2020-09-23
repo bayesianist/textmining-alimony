@@ -470,10 +470,10 @@ View(mdtnum)
 
 #Extraction des montants de prestation compensatoire
 #Extraire des paragraphes contenant le mot prestation compensatoire: "prestation compensatoire" + XXX caractère
-para_PC <- str_extract_all(train$text,".{100}prestation compensatoire.{100}")
+para_PC <- str_extract_all(train$text,".{100}somme.{100}")
 para_PC_num <- gsub("[^0-9,]", " ", c(para_PC))
 #Extraire les montants en euros à partir de ces paragraphes.
-para_num <- str_extract_all(para_PC_num,"[:digit:]*[:digit:]*[:digit:].[:digit:]{3}")
+para_num <- str_extract_all(para_PC_num,"[:digit:]*[:digit:]*[:digit:]*.[:digit:]{3}")
 para_num <- gsub(" ", "", c(para_num))
 para_num <- str_extract_all(para_num,"[:digit:]*[:digit:]*[:digit:][:digit:]{3}")
 para_num <- gsub("[^0-9]", " ", c(para_num))
@@ -484,9 +484,6 @@ mdtpara <- DocumentTermMatrix(corpus_para)
 mdtpara <- as.data.frame(as.matrix(mdtpara))
 colnames(mdtpara) <- as.numeric(colnames(mdtpara))
 View(mdtpara)
-
-
-
 
 
 ############################################################
