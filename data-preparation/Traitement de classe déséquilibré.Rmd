@@ -1,0 +1,165 @@
+---
+title: "Traitements classes déséquilibrés"
+author: "Long Nguyen"
+date: "22/04/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+sample_size = floor(0.75*nrow(DF))
+set.seed(100)
+train_ind = sample(seq_len(nrow(DF)), size = sample_size)
+train = DF[train_ind, ]
+test = DF[-train_ind, ]
+```
+
+
+```{r}
+#Verifier la répartition des classes
+table(DF$PC_FIXE)
+library(ROSE)
+library(rpart)
+modelimb <- rpart(PC_FIXE ~ .,data = train,method = 'class')
+pred_modelimb <- predict(modelimb, test[,-ncol(test)],type = 'class')
+accuracy.meas(test$PC_FIXE,pred_modelimb)
+```
+```{r}
+#ROC curve
+roc.curve(test$PC_FIXE,pred_modelimb)
+```
+```{r}
+table(train$PC_FIXE)
+#OVERSAMPLING
+df_balanced_over <- ovun.sample(PC_FIXE~.,data=train,method="over",N=4004)$data
+table(df_balanced_over$PC_FIXE)
+```
+```{r}
+#UNDERSAMPLING
+df_balanced_under <- ovun.sample(PC_FIXE~.,data=train,method="under",N=389*2,seed=1)$data
+table(df_balanced_under$PC_FIXE)
+```
+```{r}
+#BOTH
+df_balanced_both <- ovun.sample(PC_FIXE~.,data=train,method="both",p=0.5,seed=1)$data
+table(df_balanced_both$PC_FIXE)
+```
+```{r}
+#ROSE
+df_balanced_rose <- ROSE(PC_FIXE~.,data=train,seed=1)$data
+table(df_balanced_rose$PC_FIXE)
+```
+```{r}
+#Build model on 4 new dataframe
+tree.rose <- rpart(PC_FIXE ~ ., data = df_balanced_rose)
+tree.over <- rpart(PC_FIXE ~ ., data = df_balanced_over)
+tree.under <- rpart(PC_FIXE ~ ., data = df_balanced_under)
+tree.both <- rpart(PC_FIXE ~ ., data = df_balanced_both)
+```
+```{r}
+#Prediction
+pred.tree.rose <- predict(tree.rose, test[,-ncol(test)],type = 'class')
+pred.tree.over <- predict(tree.over, test[,-ncol(test)],type = 'class')
+pred.tree.under <- predict(tree.under, test[,-ncol(test)],type = 'class')
+pred.tree.both <- predict(tree.both, test[,-ncol(test)],type = 'class')
+```
+```{r}
+#AUC
+roc.curve(test$PC_FIXE,pred_modelimb)
+roc.curve(test$PC_FIXE,pred.tree.rose)
+roc.curve(test$PC_FIXE,pred.tree.over)
+roc.curve(test$PC_FIXE,pred.tree.under)
+roc.curve(test$PC_FIXE,pred.tree.both)
+```
+```{r}
+#Matrice de confusion
+mc_modelimb <- table(test$PC_FIXE,pred_modelimb)
+mc.tree.rose <- table(test$PC_FIXE,pred.tree.rose)[,c(2,1)] #switch column
+mc.tree.over <- table(test$PC_FIXE,pred.tree.over)[,c(2,1)]
+mc.tree.under <- table(test$PC_FIXE,pred.tree.under)[,c(2,1)]
+mc.tree.both <- table(test$PC_FIXE,pred.tree.both)[,c(2,1)]
+print(sum(diag(mc_modelimb))/sum(mc_modelimb))
+print(sum(diag(mc.tree.rose))/sum(mc.tree.rose))
+print(sum(diag(mc.tree.over))/sum(mc.tree.over))
+print(sum(diag(mc.tree.under))/sum(mc.tree.under))
+print(sum(diag(mc.tree.both))/sum(mc.tree.both))
+mc_modelimb
+mc.tree.rose
+mc.tree.over
+mc.tree.under
+mc.tree.both
+```
+```{r}
+#F1-score
+library(MLmetrics)
+print(F1_Score(test$PC_FIXE,pred_modelimb))
+print(F1_Score(test$PC_FIXE,pred.tree.rose))
+print(F1_Score(test$PC_FIXE,pred.tree.over))
+print(F1_Score(test$PC_FIXE,pred.tree.under))
+print(F1_Score(test$PC_FIXE,pred.tree.both))
+```
+```{r}
+ROSE.holdout <- ROSE.eval(PC_FIXE ~ ., data = train, learner = rpart, method.assess = "holdout", extr.pred = function(obj)obj[,2], seed = 1)
+ROSE.holdout
+```
+```{r}
+ROSE.bootstrapping <- ROSE.eval(PC_FIXE ~ ., data = train, learner = rpart, method.assess = "BOOT", extr.pred = function(obj)obj[,2], seed = 1)
+ROSE.bootstrapping
+```
+```{r}
+list_vartree.rose <- paste(unique(tree.rose[["frame"]]$var[tree.rose[["frame"]]$va!="<leaf>"]))
+list_vartree.rose
+df_balanced <- rbind(df_balanced_rose,test)
+DF_BN_AD <- df_balanced[,list_vartree.rose]
+DF_BN_AD <- cbind(DF_BN_AD,df_balanced$PC_FIXE)
+#Renommer la variable a predire
+names(DF_BN_AD)[names(DF_BN_AD)=='df_balanced$PC_FIXE'] <- 'PC_FIXE'
+#Discretiser les variables continues
+library(dplyr)
+DF_BN_AD_factor <- DF_BN_AD %>%  select_if(is.factor)
+DF_BN_AD_continu <- DF_BN_AD %>%  select_if(is.numeric)
+DF_BN_AD_continuD <- discretize(DF_BN_AD_continu,breaks=3)
+DF_BN_AD_final <- cbind(DF_BN_AD_continuD,DF_BN_AD_factor)
+#Repartir en donnees d'apprentissage et de test
+sample_size = floor(0.75*nrow(DF_BN_AD_final))
+set.seed(100)
+train_ind = sample(seq_len(nrow(DF_BN_AD_final)), size = sample_size)
+train_rose = DF_BN_AD_final[train_ind, ]
+test_rose = DF_BN_AD_final[-train_ind, ]
+```
+```{r}
+#Prediction avec un modèle naive bayes
+nbcl = naive.bayes(train_rose, training = "PC_FIXE")
+graphviz.plot(nbcl, layout = "fdp",shape = "ellipse")
+nbcl.fitted = bn.fit(nbcl,train_rose)
+coef(nbcl.fitted$PC_FIXE)
+coef(nbcl.fitted$ACC_OFFR)
+#Prediction evaluation 
+pred_bn <- predict(nbcl.fitted, test_rose[,-ncol(test_rose)])
+ct = table(test_rose$PC_FIXE, pred_bn)
+sum(diag(ct)) / sum(ct)
+ct
+roc.curve(test_rose$PC_FIXE, pred_bn)
+```
+```{r}
+#Surtout les variables
+df_tot <- rbind(df_balanced_rose,test)
+#Discretiser les variables continues
+library(dplyr)
+DF_tot_factor <- df_tot %>%  select_if(is.factor)
+DF_tot_continu <- df_tot %>%  select_if(is.numeric)
+library(discretization)
+DF_tot_continuD <- chiM(DF_tot_continu,alpha=0.01)
+DF_tot_continuD$Disc.data <- apply(DF_tot_continuD$Disc.data,2,factor)
+DF_tot_final <- cbind(DF_tot_continuD$Disc.data,DF_tot_factor)
+#Repartir en donnees d'apprentissage et de test
+sample_size = floor(0.75*nrow(DF_tot_final))
+set.seed(100)
+train_ind = sample(seq_len(nrow(DF_tot_final)), size = sample_size)
+train_tot = DF_tot_final[train_ind, ]
+test_tot = DF_tot_final[-train_ind, ]
+```
+
