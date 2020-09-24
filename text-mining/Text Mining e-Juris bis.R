@@ -156,9 +156,9 @@ get_mdtnum <- function(texttoclean){
 }
 
 get_mdtnum_rev <- function(texttoclean){
-  #Extraire des paragraphes contenant le mot prestation compensatoire: "prestation compensatoire" + XXX caractère
+  #Extraire des paragraphes contenant les termes "revenu" + XXX caractère
   rev_term <- paste(c(".{100}salaire.{100}", ".{100}revenu.{100}", ".{100}gagne.{100}"), collapse="|")
-  para_PC <- str_extract_all(train$text,rev_term)
+  para_PC <- str_extract_all(texttoclean,rev_term)
   para_PC_num <- gsub("[^0-9,]", " ", c(para_PC))
   #Extraire les montants en euros à partir de ces paragraphes.
   para_num <- str_extract_all(para_PC_num,"[:digit:]?[:digit:]?[:space:]?[:digit:]{3}[:digit:]?[:space:]?")
@@ -169,19 +169,19 @@ get_mdtnum_rev <- function(texttoclean){
 
   mdtpara <- DocumentTermMatrix(corpus_para)
   mdtpara <- as.data.frame(as.matrix(mdtpara))
-  colnames(mdtpara) <- as.numeric(colnames(mdtpara))
-  return(mdtpara)
+  
   newcolnames <- c()
   for (col in as.numeric(colnames(mdtpara))) {
     if (col > 15000){
-      newcolnames <- append(newcolnames,col/12)
+      newcolnames <- append(newcolnames,round(col/12))
     } else newcolnames <- append(newcolnames,col)
   }
   colnames(mdtpara) <- newcolnames
+  return(mdtpara)
 }
 
 #Controle:
-View(get_mdtnum(test$text))
+View(get_mdtnum_rev(test$text))
 
 
 
@@ -302,14 +302,14 @@ mdt_test_reg_dis <- mdt_test_reg_dis[, names(mdt_train_reg_dis)]
 ##############################################################################
 #Create MatrixDocumentTerm for train with only revenu amount
 mdt_train_reg_rev <- get_mdtnum_rev(train$text)
-mdt_train_reg_rev <- mdt_train_reg_rev[,as.numeric(colnames(mdt_train_reg_rev))<50000]
+mdt_train_reg_rev_bis <- mdt_train_reg_rev[,as.numeric(colnames(mdt_train_reg_rev))<15000]
 #Recuper la valeur maximales de la discretisation de train
-maxclasstrain_rev <- disval(mdt_train_reg_rev,k=20)
+maxclasstrain_rev <- disval(mdt_train_reg_rev_bis,k=10)
 
 #Transformer mdt_train_reg en mdt_train_reg_discretise
 mdt_train_reg_dis_rev <- data.frame(classval(mdt_train_reg_rev,maxclasstrain_rev))
 #Transformer mdt_test_reg en mdt_test_reg_discretise
-mdt_test_reg_dis_rev <- data.frame(classval(get_mdtnum(test$text),maxclasstrain_rev))
+mdt_test_reg_dis_rev <- data.frame(classval(get_mdtnum_rev(test$text),maxclasstrain_rev))
 
 # Match train & test column
 w_i_rev = colnames(mdt_train_reg_dis_rev) %in% colnames(mdt_test_reg_dis_rev) #identify train's columns in test
@@ -320,8 +320,8 @@ mdt_test_reg_dis_rev <- mdt_test_reg_dis_rev[, names(mdt_train_reg_dis_rev)]
 
 
 #Joindre les df et Ajouter la variable dependante
-mdt_train_reg_dis <- data.frame(cbind(mdt_train_reg_dis,mdt_train_reg_dis_rev,PC_MT_CAPITAL=train$PC_MT_CAPITAL))
-mdt_test_reg_dis <- data.frame(cbind(mdt_test_reg_dis,mdt_test_reg_dis_rev,PC_MT_CAPITAL=test$PC_MT_CAPITAL))
+mdt_train_reg_dis_final <- data.frame(cbind(mdt_train_reg_dis,mdt_train_reg_dis_rev,PC_MT_CAPITAL=train$PC_MT_CAPITAL))
+mdt_test_reg_dis_final <- data.frame(cbind(mdt_test_reg_dis,mdt_test_reg_dis_rev,PC_MT_CAPITAL=test$PC_MT_CAPITAL))
 
 
 ############################################################
@@ -423,17 +423,17 @@ modelZIP <- zeroinfl(PC_FIXE ~ . |. ,data = mdt_train_df)
 ############################################################
 #Regression + discretisation
 #Linear
-lmmodel <- lm(formula = PC_MT_CAPITAL ~ .,data=mdt_train_reg_dis)
-y_pred_lm <- predict(lmmodel,mdt_test_reg_dis) *as.numeric(y_predAD)
+lmmodel <- lm(formula = PC_MT_CAPITAL ~ .,data=mdt_train_reg_dis_final)
+y_pred_lm <- predict(lmmodel,mdt_test_reg_dis_final) *as.numeric(y_predAD)
 #Arbre de decision
-ADmodel <- rpart(PC_MT_CAPITAL ~ .,data=mdt_train_reg_dis)
-y_pred_AD <- predict(ADmodel, mdt_test_reg_dis[,-ncol(mdt_test_reg_dis)]) *as.numeric(y_predAD)
+ADmodel <- rpart(PC_MT_CAPITAL ~ .,data=mdt_train_reg_dis_final)
+y_pred_AD <- predict(ADmodel, mdt_test_reg_dis_final[,-ncol(mdt_test_reg_dis_final)]) *as.numeric(y_predAD)
 #Quantile regression
-rqmodel <- rq(formula = PC_MT_CAPITAL ~ .,data=mdt_train_reg_dis)
-y_pred_rq <- predict(rqmodel,mdt_test_reg_dis) *as.numeric(y_predAD)
+rqmodel <- rq(formula = PC_MT_CAPITAL ~ .,data=mdt_train_reg_dis_final)
+y_pred_rq <- predict(rqmodel,mdt_test_reg_dis_final) *as.numeric(y_predAD)
 
 #prediction accuracy
-actuals_preds_step <- data.frame(cbind(actuals=mdt_test_reg_dis$PC_MT_CAPITAL, predicteds=y_pred_AD))  # make actuals_predicteds dataframe.
+actuals_preds_step <- data.frame(cbind(actuals=mdt_test_reg_dis_final$PC_MT_CAPITAL, predicteds=y_pred_AD))  # make actuals_predicteds dataframe.
 cor(actuals_preds_step)^2# 0.2425739 / lm: 0.2524627 / rq: 0.24961 
 mean(actuals_preds_step$actuals) #24199.85
 mean(actuals_preds_step$predicteds) #19730.7 / 19924.88 / 17468.31
@@ -448,7 +448,7 @@ max(actuals_preds_step$actuals)
 max(actuals_preds_step$predicteds)
 
 #####################GRAPH
-ggplot(mdt_test_reg_dis, aes(x = mdt_test_reg_dis$PC_MT_CAPITA, y = y_pred_lm)) + geom_point() + geom_abline(color = "blue")
+ggplot(mdt_test_reg_dis, aes(x = mdt_test_reg_dis_final$PC_MT_CAPITA, y = y_pred_rq)) + geom_point() + geom_abline(color = "blue")
 
 
 
@@ -545,7 +545,7 @@ mdtpara <- as.data.frame(as.matrix(mdtpara))
 newcolnames <- c()
 for (col in as.numeric(colnames(mdtpara))) {
   if (col > 15000){
-    newcolnames <- append(newcolnames,col/12)
+    newcolnames <- append(newcolnames,round(col/12))
   } else newcolnames <- append(newcolnames,col)
 }
 colnames(mdtpara) <- newcolnames
