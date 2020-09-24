@@ -141,9 +141,10 @@ get_mdtnum <- function(texttoclean){
   para_PC <- str_extract_all(texttoclean,".{100}prestation compensatoire.{100}")
   para_PC_num <- gsub("[^0-9,]", " ", c(para_PC))
   #Extraire les montants en euros à partir de ces paragraphes.
-  para_num <- str_extract_all(para_PC_num,"[:digit:]*[:digit:]*[:digit:].[:digit:]{3}")
+  para_num <- str_extract_all(para_PC_num,"[:digit:]*[:digit:]*[:digit:][:space:]?[:digit:]{3}")
+  #para_num <- str_extract_all(para_PC_num,"[:digit:]?[:digit:]?[:digit:]?[:space:]?[:digit:]{3}[:digit:]?[:space:]?")
   para_num <- gsub(" ", "", c(para_num))
-  para_num <- str_extract_all(para_num,"[:digit:]*[:digit:]*[:digit:][:digit:]{3}")
+  para_num <- str_extract_all(para_num,"[:digit:]*[:digit:]")
   para_num <- gsub("[^0-9]", " ", c(para_num))
   corpus_para <- Corpus(VectorSource(para_num))
   #corpus_para <- tm_map(corpus_para, stripWhitespace)
@@ -152,6 +153,31 @@ get_mdtnum <- function(texttoclean){
   mdtpara <- as.data.frame(as.matrix(mdtpara))
   colnames(mdtpara) <- as.numeric(colnames(mdtpara))
   return(mdtpara)
+}
+
+get_mdtnum_rev <- function(texttoclean){
+  #Extraire des paragraphes contenant le mot prestation compensatoire: "prestation compensatoire" + XXX caractère
+  rev_term <- paste(c(".{100}salaire.{100}", ".{100}revenu.{100}", ".{100}gagne.{100}"), collapse="|")
+  para_PC <- str_extract_all(train$text,rev_term)
+  para_PC_num <- gsub("[^0-9,]", " ", c(para_PC))
+  #Extraire les montants en euros à partir de ces paragraphes.
+  para_num <- str_extract_all(para_PC_num,"[:digit:]?[:digit:]?[:space:]?[:digit:]{3}[:digit:]?[:space:]?")
+  para_num <- gsub(" ", "", c(para_num))
+  para_num <- str_extract_all(para_num,"[:digit:]*[:digit:]")
+  para_num <- gsub("[^0-9]", " ", c(para_num))
+  corpus_para <- Corpus(VectorSource(para_num))
+
+  mdtpara <- DocumentTermMatrix(corpus_para)
+  mdtpara <- as.data.frame(as.matrix(mdtpara))
+  colnames(mdtpara) <- as.numeric(colnames(mdtpara))
+  return(mdtpara)
+  newcolnames <- c()
+  for (col in as.numeric(colnames(mdtpara))) {
+    if (col > 15000){
+      newcolnames <- append(newcolnames,col/12)
+    } else newcolnames <- append(newcolnames,col)
+  }
+  colnames(mdtpara) <- newcolnames
 }
 
 #Controle:
@@ -238,13 +264,13 @@ classval <- function(df, classmax) {
       }  
     }    
   }
-  #mydf <- t(apply(df,1,function(x){x*as.numeric(colnames(df))} ))
-  #mydf <- rbind(classcol=classcol, mydf)
+  mydf <- t(apply(df,1,function(x){x*as.numeric(colnames(df))} ))
+  mydf <- rbind(classcol=classcol, mydf)
   
-  mydf <- rbind(classcol=classcol, df)
+  #mydf <- rbind(classcol=classcol, df)
   #Moyenne de chaque classe
-  #dffinal <- t(apply(mydf,1,function(x) {tapply(x,classcol,mean)}))
-  dffinal <- t(apply(mydf,1,function(x) {tapply(x,classcol,sum)}))
+  dffinal <- t(apply(mydf,1,function(x) {tapply(x,classcol,mean)}))
+  #dffinal <- t(apply(mydf,1,function(x) {tapply(x,classcol,sum)}))
   dffinal <- dffinal[-1,]
   
   return(dffinal)
@@ -254,20 +280,17 @@ classval <- function(df, classmax) {
 ############################################################
 ############################################################PREPARER TRAIN/TEST POUR REGRESSION
 ############################################################
-#Create MatrixDocumentTerm for train with only number
+#Create MatrixDocumentTerm for train with only prestation compensatoire amount
 mdt_train_reg <- get_mdtnum(train$text)
 mdt_train_reg <- mdt_train_reg[,as.numeric(colnames(mdt_train_reg))<201000]
+#mdt_train_reg <- mdt_train_reg[,as.numeric(colnames(mdt_train_reg))>1000]
 #Recuper la valeur maximales de la discretisation de train
 maxclasstrain <- disval(mdt_train_reg,k=20)
 
 #Transformer mdt_train_reg en mdt_train_reg_discretise
-mdt_train_reg_dis <- classval(mdt_train_reg,maxclasstrain)
+mdt_train_reg_dis <- data.frame(classval(mdt_train_reg,maxclasstrain))
 #Transformer mdt_test_reg en mdt_test_reg_discretise
-mdt_test_reg_dis <- classval(get_mdtnum(test$text),maxclasstrain)
-
-#Ajouter la variable dependante
-mdt_train_reg_dis <- data.frame(cbind(mdt_train_reg_dis,PC_MT_CAPITAL=train$PC_MT_CAPITAL))
-mdt_test_reg_dis <- data.frame(cbind(mdt_test_reg_dis,PC_MT_CAPITAL=test$PC_MT_CAPITAL))
+mdt_test_reg_dis <- data.frame(classval(get_mdtnum(test$text),maxclasstrain))
 
 # Match train & test column
 w_i = colnames(mdt_train_reg_dis) %in% colnames(mdt_test_reg_dis) #identify train's columns in test
@@ -276,11 +299,29 @@ mdt_test_reg_dis[,names(mdt_train_reg_dis)[!w_i]] = 0
 # tri comme dans train
 mdt_test_reg_dis <- mdt_test_reg_dis[, names(mdt_train_reg_dis)]
 
-#Scenario 2: meme mdt que classif (pas mieux)
-train_reg <- subset(mdt_train_df, select=-c(PC_FIXE))
-train_reg <- data.frame(cbind(train_reg,PC_MT_CAPITAL = train$PC_MT_CAPITAL))
-test_reg <- subset(mdt_test_df, select=-c(PC_FIXE))
-test_reg <- data.frame(cbind(test_reg,PC_MT_CAPITAL = test$PC_MT_CAPITAL))
+##############################################################################
+#Create MatrixDocumentTerm for train with only revenu amount
+mdt_train_reg_rev <- get_mdtnum_rev(train$text)
+mdt_train_reg_rev <- mdt_train_reg_rev[,as.numeric(colnames(mdt_train_reg_rev))<50000]
+#Recuper la valeur maximales de la discretisation de train
+maxclasstrain_rev <- disval(mdt_train_reg_rev,k=20)
+
+#Transformer mdt_train_reg en mdt_train_reg_discretise
+mdt_train_reg_dis_rev <- data.frame(classval(mdt_train_reg_rev,maxclasstrain_rev))
+#Transformer mdt_test_reg en mdt_test_reg_discretise
+mdt_test_reg_dis_rev <- data.frame(classval(get_mdtnum(test$text),maxclasstrain_rev))
+
+# Match train & test column
+w_i_rev = colnames(mdt_train_reg_dis_rev) %in% colnames(mdt_test_reg_dis_rev) #identify train's columns in test
+# set to 0 tous les colonnes qui ne sont pas dans test mais existent en train
+mdt_test_reg_dis_rev[,names(mdt_train_reg_dis_rev)[!w_i_rev]] = 0
+# tri comme dans train
+mdt_test_reg_dis_rev <- mdt_test_reg_dis_rev[, names(mdt_train_reg_dis_rev)]
+
+
+#Joindre les df et Ajouter la variable dependante
+mdt_train_reg_dis <- data.frame(cbind(mdt_train_reg_dis,mdt_train_reg_dis_rev,PC_MT_CAPITAL=train$PC_MT_CAPITAL))
+mdt_test_reg_dis <- data.frame(cbind(mdt_test_reg_dis,mdt_test_reg_dis_rev,PC_MT_CAPITAL=test$PC_MT_CAPITAL))
 
 
 ############################################################
@@ -392,16 +433,16 @@ rqmodel <- rq(formula = PC_MT_CAPITAL ~ .,data=mdt_train_reg_dis)
 y_pred_rq <- predict(rqmodel,mdt_test_reg_dis) *as.numeric(y_predAD)
 
 #prediction accuracy
-actuals_preds_step <- data.frame(cbind(actuals=mdt_test_reg_dis$PC_MT_CAPITAL, predicteds=y_pred_lm))  # make actuals_predicteds dataframe.
-cor(actuals_preds_step)^2# 0.04935686 / lm: 0.05192809 / rq: 0.03087807
-mean(actuals_preds_step$actuals) #38486.03
-mean(actuals_preds_step$predicteds) #34704.4 / 34990.63 / 18581.11
+actuals_preds_step <- data.frame(cbind(actuals=mdt_test_reg_dis$PC_MT_CAPITAL, predicteds=y_pred_AD))  # make actuals_predicteds dataframe.
+cor(actuals_preds_step)^2# 0.2425739 / lm: 0.2524627 / rq: 0.24961 
+mean(actuals_preds_step$actuals) #24199.85
+mean(actuals_preds_step$predicteds) #19730.7 / 19924.88 / 17468.31
 actuals_preds_step$error <- abs(actuals_preds_step$actuals - actuals_preds_step$predicteds)
-max(actuals_preds_step$error) #340466.8 / 337961.4 / 356862.4
+max(actuals_preds_step$error) #96000/ 96000/ 96000
 min(actuals_preds_step$error) #0
-mean(actuals_preds_step$error)#32793.31 / 33212.21 / 30946.74
-median(actuals_preds_step$error) #24633.21 / 25881.36 / 16780
-sd(actuals_preds_step$error) #41550.31 / 41232.57 / 47571.62
+mean(actuals_preds_step$error)#15370.33 / 14980.51 / 14818.13
+median(actuals_preds_step$error) #11132.36 / 11087.29 /  9741.125
+sd(actuals_preds_step$error) #15447.41 / 15596.02 / 17013.98
 
 max(actuals_preds_step$actuals)
 max(actuals_preds_step$predicteds)
@@ -470,12 +511,12 @@ View(mdtnum)
 
 #Extraction des montants de prestation compensatoire
 #Extraire des paragraphes contenant le mot prestation compensatoire: "prestation compensatoire" + XXX caractère
-para_PC <- str_extract_all(train$text,".{100}somme.{100}")
+para_PC <- str_extract_all(train$text,".{100}prestation compensatoire.{100}")
 para_PC_num <- gsub("[^0-9,]", " ", c(para_PC))
 #Extraire les montants en euros à partir de ces paragraphes.
-para_num <- str_extract_all(para_PC_num,"[:digit:]*[:digit:]*[:digit:]*.[:digit:]{3}")
+para_num <- str_extract_all(para_PC_num,"[:digit:]?[:digit:]?[:digit:]?[:space:]?[:digit:]{3}[:digit:]?[:space:]?")
 para_num <- gsub(" ", "", c(para_num))
-para_num <- str_extract_all(para_num,"[:digit:]*[:digit:]*[:digit:][:digit:]{3}")
+para_num <- str_extract_all(para_num,"[:digit:]*[:digit:]")
 para_num <- gsub("[^0-9]", " ", c(para_num))
 corpus_para <- Corpus(VectorSource(para_num))
 #corpus_para <- tm_map(corpus_para, stripWhitespace)
@@ -483,6 +524,31 @@ corpus_para <- Corpus(VectorSource(para_num))
 mdtpara <- DocumentTermMatrix(corpus_para)
 mdtpara <- as.data.frame(as.matrix(mdtpara))
 colnames(mdtpara) <- as.numeric(colnames(mdtpara))
+View(mdtpara)
+
+#Extraction des montants des revenus
+#Extraire des paragraphes contenant plusieurs possibilites de terme + XXX caractère
+rev_term <- paste(c(".{100}salaire.{100}", ".{100}revenu.{100}", ".{100}gagne.{100}"), collapse="|")
+para_PC <- str_extract_all(train$text,rev_term)
+para_PC_num <- gsub("[^0-9,]", " ", c(para_PC))
+#Extraire les montants en euros à partir de ces paragraphes.
+para_num <- str_extract_all(para_PC_num,"[:digit:]?[:digit:]?[:space:]?[:digit:]{3}[:digit:]?[:space:]?")
+para_num <- gsub(" ", "", c(para_num))
+para_num <- str_extract_all(para_num,"[:digit:]*[:digit:]")
+para_num <- gsub("[^0-9]", " ", c(para_num))
+corpus_para <- Corpus(VectorSource(para_num))
+#corpus_para <- tm_map(corpus_para, stripWhitespace)
+#corpus_para <- tm_map(corpus_para, removePunctuation)
+mdtpara <- DocumentTermMatrix(corpus_para)
+mdtpara <- as.data.frame(as.matrix(mdtpara))
+
+newcolnames <- c()
+for (col in as.numeric(colnames(mdtpara))) {
+  if (col > 15000){
+    newcolnames <- append(newcolnames,col/12)
+  } else newcolnames <- append(newcolnames,col)
+}
+colnames(mdtpara) <- newcolnames
 View(mdtpara)
 
 
