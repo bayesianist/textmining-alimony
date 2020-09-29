@@ -53,3 +53,10 @@ DF_paper <- cbind(DF_classifier_ss_consentement,DF_ss_consentement_continu$PC_MT
 names(DF_paper)[names(DF_paper)=='DF_ss_consentement_continu$PC_MT_CAPITAL'] <- 'PC_MT_CAPITAL'
 DF_paper_light <- subset(DF_paper,select=unlist(variables$VARS))
 write.csv(DF_paper_light,"DF_paper")
+
+###########################Analyse les montants de PC
+montant_PC <- data.frame(table(DF_ss_consentement_continu$PC_MT_CAPITAL))
+montant_PC <- montant_PC[order(-montant_PC$Freq),]
+View(montant_PC)
+barplot(montant_PC[2:30,2],names.arg=montant_PC[2:30,1],xlab = 'montant PC',ylab="Nombre de décisions",col="blue",las=2)
+write.csv(montant_PC,'repartition_montant_PC.csv')
